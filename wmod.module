@@ -403,7 +403,7 @@ function wmod_import_form(&$form_state, $wmid = NULL){
     );
     $form['urls'][$i]['settings']['menu']['parent'] = array(
       '#type' => 'select',
-    '#options' => menu_parent_options(menu_get_menus(),$menu_item),
+      '#options' => menu_parent_options(menu_get_menus(),$menu_item),
       '#default_value' => $wm['cont_type']['menu'],
     );
     $form['urls'][$i]['settings']['menu']['link_title'] = array(
@@ -413,6 +413,7 @@ function wmod_import_form(&$form_state, $wmid = NULL){
     $form['urls'][$i]['settings']['path'] = array(
       '#type' => 'textfield',
       '#title' => 'Path',
+      '#description' => 'This path will be assigned to the new node!',
       '#default_value' => $path,
     );
     $form['urls'][$i]['preview'] = array(
@@ -524,6 +525,7 @@ function wmod_form(&$form_state, $wmid = NULL){
   $form['url']['title'] = array(
     '#type' => 'textfield',
     '#title' => 'Title',
+    '#description' => t('This is just a title for admin purposes... so, go ahead and code-name this project <em>Snake-eyes</em>. It doesn\'t really matter.'),
     '#maxlength' => 127,
     '#required' => TRUE,
     '#default_value' => $wm['title'],
@@ -531,15 +533,15 @@ function wmod_form(&$form_state, $wmid = NULL){
   $form['url']['base_url'] = array(
     '#type' => 'textfield',
     '#title' => t('Base URL'),
-    '#description' => t('NOTE: <em>Please, NO trailing slash! Max limit: 256 chars</em>'),
-    '#maxlength' => 256,
+    '#description' => t('This is the URL you will be starting from. Should be like: <em>http://google.com</em>
+          <br /><strong>NOTE:</strong> <em>Please, NO trailing slash! Max limit: 128 chars</em>'),
+    '#maxlength' => 128,
     '#required' => TRUE,
     '#default_value' => $wm['base_url'],
   );
   $form['xpath'] = array(
     '#type' => 'fieldset',
-    '#title' => 'Content Settings',
-    '#description' => "jQuery/CSS style selectors!",
+    '#title' => 'Node Settings',
     '#collapsible' => TRUE,
     '#collapsed' => FALSE,
   );
@@ -607,6 +609,7 @@ function wmod_form(&$form_state, $wmid = NULL){
     foreach ($wm['cont_type']['fields'] as $key => $val) {
       $form['xpath'][$key] = array(
         '#type' => 'textfield',
+        '#description' => "jQuery/CSS style selectors!",
         '#title' => $val['label'].' XPath',
         '#default_value' => $val['xpath'],
       );
