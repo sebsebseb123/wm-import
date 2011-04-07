@@ -1,0 +1,9 @@
+name = Web Mod Import
+description = Imports site data from existing site.
+dependencies[] = ahah_helper
+dependencies[] = content
+dependencies[] = path
+core = 6.x
+package = Web Mod
+
+
