@@ -36,6 +36,11 @@ function wmod_schema() {
   
   $schema['wmod_urls'] = array(
     'fields' => array(
+      'wmurl_id' => array(
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
       'wmid' => array(
         'type' => 'int',
         'unsigned' => TRUE,
@@ -65,9 +70,20 @@ function wmod_schema() {
         'unsigned' => TRUE,
         'not null' => TRUE,
         'default' => 0,
+      ),
+      'imported' => array(
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'imported_info' => array(
+        'type' => 'text',
+        'size' => 'big',
+        'not null' => TRUE,
       )
     ),
-    'primary key' => array('path'),
+    'primary key' => array('wmurl_id'),
   );
   
   return $schema;

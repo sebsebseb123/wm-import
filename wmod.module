@@ -868,7 +868,7 @@ function wmod_get_html_urls($wmid) {
   $urls = array();
 
   $sql = '';
-  $sql .= 'SELECT w.path ';
+  $sql .= 'SELECT w.wmurl_id, w.path ';
   $sql .= 'FROM {wmod_urls} w ';
   $sql .= 'WHERE w.wmid = %d ';
   $sql .= 'AND w.error = 0 ';
@@ -878,10 +878,10 @@ function wmod_get_html_urls($wmid) {
   
   while ($result = db_fetch_array($results)) {
     if ($wm['base_url'] != $result['path']){
-      $urls[] = $wm['base_url'].'/'.$result['path'];
+      $urls[$result['wmurl_id']] = $wm['base_url'].'/'.$result['path'];
     }
     else {
-      array_unshift($urls, $wm['base_url']);
+      $urls[$result['wmurl_id']] = $wm['base_url'];
     }
   }
 
