@@ -641,10 +641,14 @@ function wmod_form_submit($form, &$form_state) {
   );
   $cont_type_info['fields']['title__xpath']['label'] = 'Title';
   $cont_type_info['fields']['title__xpath']['xpath'] = isset($form_state['values']['title__xpath']) ? $form_state['values']['title__xpath'] : '';
-  $cont_fields = content_fields(NULL, $cont_type_info['type']);
-  foreach ($cont_fields as $key => $field) {
-    $cont_type_info['fields'][$key.'__xpath']['label'] = $field['widget']['label'];
-    $cont_type_info['fields'][$key.'__xpath']['xpath'] = isset($form_state['values'][$key.'__xpath']) ? $form_state['values'][$key.'__xpath'] : '';
+  $cont_fields = content_fields();
+  foreach (array_filter($cont_fields) as $key => $field) {
+    $each = content_fields($key, $cont_type_info['type']);
+    if ($each['type_name'] == $cont_type_info['type']) {
+      $cont_type_info['fields'][$key.'__xpath']['info'] = $each;
+      $cont_type_info['fields'][$key.'__xpath']['label'] = $each['widget']['label'];
+      $cont_type_info['fields'][$key.'__xpath']['xpath'] = isset($form_state['values'][$key.'__xpath']) ? $form_state['values'][$key.'__xpath'] : '';
+    }
   }
 
   // Set array for defaults.
@@ -861,7 +865,7 @@ function wmod_add_link ($path, $wmid, $type) {
 
 function wmod_get_html_urls($wmid) {
   $wm = array_shift(wmod_load($wmid));
-  $url = array();
+  $urls = array();
 
   $sql = '';
   $sql .= 'SELECT w.path ';
