@@ -270,15 +270,22 @@ function wmod_preview_page($wm, $path, $fields){
           $lil_path = explode('/', $_SERVER['PHP_SELF']);
           $lil_path = $lil_path[1];
           $rel_path = $lil_path.'/'.file_directory_path().'/wm_import/'.$filename;
+          $rel_path = file_directory_path().'/wm_import/'.$filename;
           $fullpath = $doc_root.$rel_path;
+          $fullpath = $rel_path;
           $file_temp = file_get_contents($wm['base_url'].'/'.$img_path);
           $file_temp = file_save_data($file_temp, $fullpath);
           // Change src attribute to new "relative" path.
-          $img->attr('src', ($file_temp ? '/'.$rel_path : 0));
+          $img->attr('src', ($file_temp ? '/'.$lil_path.'/'.$rel_path : 0));
         }
       }
     }
-    $results[$path][$field] = $result->top()->find($xpath)->innerHTML();
+    if ($field == 'title') {
+      $results[$path][$field] = $result->top()->find($xpath)->text();
+    }
+    else {
+      $results[$path][$field] = $result->top()->find($xpath)->innerHTML();
+    }
   }
   return $results;
 }
