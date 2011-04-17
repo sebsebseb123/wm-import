@@ -55,6 +55,17 @@ function wmod_menu() {
     'type' => MENU_CALLBACK,
   );
   
+  $items['wmod_js/update_ahah'] = array(
+    'page callback' => 'wmod_update_ahah',
+    'access callback' => TRUE,
+    'type' => MENU_CALLBACK,
+  );
+  $items['wmod_js/update_interval'] = array(
+    'page callback' => 'wmod_update_interval',
+    'access callback' => TRUE,
+    'type' => MENU_CALLBACK,
+  );
+  
   return $items;
 }
 
@@ -83,12 +94,10 @@ function wmod_view_page() {
 }
 
 // Turns the url into a relative path... relative to the base_url
-function wmod_parse_url($tmp_url, $path, $base_url) {
-
-  
+function wmod_parse_url($tmp_url, $path, $url) {
   // Remove the base url.
-  if (strpos($tmp_url, $base_url) === 0) {
-    $tmp_url = str_replace($base_url, '', $tmp_url);
+  if (strpos($tmp_url, $url) === 0) {
+    $tmp_url = str_replace($url, '', $tmp_url);
   }
 
   // Check if it valid, snip accordingly.
@@ -127,7 +136,7 @@ function wmod_parse_url($tmp_url, $path, $base_url) {
     $tmp_url = implode('/',array_merge($path_bits, $tmp_bits));
   }
   // Check for realative path, which means if we're not on the homepage.
-  else if ($path != $base_url) {
+  else if ($path != $url) {
     $path_bits = explode('/', $path);
     // If our path has a file on the end of it... we don't want that element.
     if (strpos($path_bits[count($path_bits) - 1], '.')) {
@@ -144,8 +153,49 @@ function wmod_parse_url($tmp_url, $path, $base_url) {
     $tmp_url = substr($tmp_url, 1);
   }
 
+  if ($tmp_url) {
+    return $url.'/'.$tmp_url;
+  }
+  else {
+    return FALSE;
+  }
+}
 
-  return $tmp_url;
+function wmod_update_pages($wm) {
+  // Find our time limit, start timer.
+  $timelimit = ini_get('max_execution_time');
+  $start = microtime(TRUE);
+  $end = ($timelimit / 2) + microtime(TRUE);
+  
+  // Set vars.
+  // Get the URLS we're working on.
+  $urls = wmod_get_updatable_urls($wm['wmid']);
+  
+  dsm($urls);
+  // If we have paths, start it up
+  $stop = empty($urls) ? TRUE : FALSE;
+  while (!$stop){
+    // Check each of the available urls
+    $url = array_shift($urls);
+
+    wmod_update_page($wm, $url);
+
+    wmod_set_up_int_per($wm['wmid']);
+    $per = wmod_get_up_int_per();
+
+    // If time is up, or if percent is 100.
+    if ($end < microtime(TRUE) || $per == 100 || empty($urls)) {
+      $stop = TRUE;
+    }
+  }
+}
+
+function wmod_update_page($wm, $url) {
+  $page = wmod_get_url($url, $wm['wmid']);
+  
+  $info = unserialize($page['imported_info']);  
+  
+  dsm($info);
 }
 
 function wmod_scan_pages($wm) {
@@ -156,68 +206,79 @@ function wmod_scan_pages($wm) {
   
   // Set vars.
   // Get the URLS we're working on.
-  $base_url = $wm['base_url'];
-  $paths = wmod_get_avail_paths($wm['wmid']);
+  $urls = wmod_get_avail_urls($wm['wmid']);
   // If we have paths, start it up
-  $stop = empty($paths) ? TRUE : FALSE;
+  $stop = empty($urls) ? TRUE : FALSE;
   while (!$stop){
     // Check each of the available urls
-    $path = array_shift($paths);
+    $url = array_shift($urls);
 
-    if ($path != $base_url) {
-      $url = $base_url.'/'.$path;
-    }
-    else {
-      $url = $base_url;
-    }
     // Scan the page.
-    $page_paths = wmod_scan_page($url, $path, $base_url);
+    $page_urls = wmod_scan_page($wm, $url);
     // If there were no errors, we should probably be adding pages.
-    if ($page_paths) {
-      wmod_add_links($page_paths, $wm['wmid']);
+    if ($page_urls) {
+      wmod_add_links($page_urls, $wm['wmid']);
     }
-    
-    wmod_set_interval_percent($wm['wmid']);
-    $per = wmod_get_interval_percent();
+
+    wmod_set_scan_int_per($wm['wmid']);
+    $per = wmod_get_scan_int_per();
 
     // If time is up, or if percent is 100.
     if ($end < microtime(TRUE) || $per == 100) {
       $stop = TRUE;
     }
     // If we're not done... let's try to get some more URLs!
-    else if (empty($paths)) {
-      $paths = wmod_get_avail_paths($wm['wmid']);
+    else if (empty($urls)) {
+      $urls = wmod_get_avail_urls($wm['wmid']);
     }
   }
 }
 
-function wmod_scan_page($url, $path, $base_url) {
+function wmod_scan_page($wm, $url) {
   // Set vars
-  $page_paths = array();  
+  $page_urls = array();
+  $path = str_replace($wm['base_url'], '', $url);
+  $path = $wm['base_url'] == $url ? '' : substr($path, 1);
+  
+  $html = htmlqp($url)->html();
 
-  // Thanks Querypath!
   // Get all a tags.
-  foreach (htmlqp($url, 'a') as $a) {
+  // Thanks Querypath!
+  foreach (htmlqp($html, 'a') as $a) {
     // Then their href attributes.
-    $page_path = wmod_parse_url(trim($a->attr('href')), $path, $base_url);
+    $page_url = wmod_parse_url(trim($a->attr('href')), $path, $wm['base_url']);
     // Make sure there is something there.
-    if (!empty($page_path)) {
+    if ($page_url) {
       // Find out what type it is.
-      $type = wmod_find_type($page_path);
+      $type = wmod_find_type($page_url);
       // Add page to array.
-      $page_paths[] = array(
-        'path' => $page_path,
+      $page_urls[] = array(
+        'url' => $page_url,
         'type' => $type,
       );
     }
   }
   // Update the link we just scanned.
-  wmod_update_link($path, empty($page_paths));
+  $url_data = array(
+    'error' => array(
+      'holder' => '%d',
+      'val' => empty($page_urls) ? 1 : 0,
+    ),
+    'scanned' => array(
+      'holder' => '%d',
+      'val' => 1,
+    ),
+    'html' => array(
+      'holder' => '"%s"',
+      'val' => serialize($html),
+    ),
+  );
+  wmod_update_link($url, $wm['wmid'], $url_data);
   
-  return $page_paths;
+  return $page_urls;
 }
 
-function wmod_find_type($url) {
+function wmod_find_type($url){
   $ext = substr(strtolower(array_pop(explode('.', $url))), 0, 3);
 
   // Define types.
@@ -242,17 +303,30 @@ function wmod_find_type($url) {
   else {
     return 'html';
   }
+  
 }
 
-function wmod_preview_page($wm, $path, $fields){
-  $url = $wm['base_url'].'/'.$path;
+function wmod_preview_page($wm, $wmurl_id, $fields){
+  $url = wmod_get_url($wmurl_id, $wm['wmid']);
+  $path = str_replace($wm['base_url'].'/', '', $url['path']);
   $image_urls = array();
+  $page = htmlqp($url['html']);
   $results = array();
-  $page = htmlqp($url);
+  $results['#info']['#url'] = $url['path'];
 
   foreach (array_filter($fields) as $field => $xpath) {
     $result = $page->find($xpath);
+    // save original HTML to results array
+    if ($field == 'title') {
+      $results['#info'][$field]['content'] = $result->top()->find($xpath)->text();
+      $results['#info'][$field]['field'] = $wm['cont_type']['fields'][$field.'__xpath']['info'];
+    }
+    else {
+      $results['#info'][$field]['content'] = $result->top()->find($xpath)->innerHTML();
+      $results['#info'][$field]['field'] = $wm['cont_type']['fields'][$field.'__xpath']['info'];
+    }
 
+    // Search for images... then change the paths on the img-src attribs
     foreach ($result->top()->find($xpath)->find('img') as $img) {
       $img_path = trim($img->attr('src'));
       $img_path = array_shift(explode('?', $img_path));
@@ -264,65 +338,194 @@ function wmod_preview_page($wm, $path, $fields){
         $type = wmod_find_type($img_path);
         // Save it.
         if ($type == 'img') {
-          // Set the full path on the server
-          $filename = array_pop(explode('/', $img_path));
-          $doc_root = $_SERVER['DOCUMENT_ROOT'];
-          $lil_path = explode('/', $_SERVER['PHP_SELF']);
-          $lil_path = $lil_path[1];
-          $rel_path = $lil_path.'/'.file_directory_path().'/wm_import/'.$filename;
-          $rel_path = file_directory_path().'/wm_import/'.$filename;
-          $fullpath = $doc_root.$rel_path;
-          $fullpath = $rel_path;
-          $file_temp = file_get_contents($wm['base_url'].'/'.$img_path);
-          $file_temp = file_save_data($file_temp, $fullpath);
-          // Change src attribute to new "relative" path.
-          $img->attr('src', ($file_temp ? '/'.$lil_path.'/'.$rel_path : 0));
+          $fid = FALSE;
+          $file_temp = NULL;
+          // See if this image was already imported
+          $img_link = wmod_get_url($img_path);
+          if (isset($img_link['imported_info'])) {
+            $fid = unserialize($img_link['imported_info']);
+            $fid = $fid['fid'];
+            
+            $sql = '';
+            $sql .= 'SELECT f.filepath ';
+            $sql .= 'FROM {files} f ';
+            $sql .= 'WHERE f.fid=%d ';
+            
+            $rel_path = db_result(db_query($sql, $fid));
+
+            global $base_url;
+            // Change src attribute to new "relative" path.
+            $img->attr('src', $base_url.'/'.$rel_path);
+          }
+          
+          // If we don't have a valid fid, then we probs havn't imported the file
+          if (!is_numeric($fid)) {
+            // Set the full path on the server
+            $filename = basename($img_path);
+            $doc_root = $_SERVER['DOCUMENT_ROOT'];
+            $rel_path = file_directory_path().'/wm_import/'.$filename;
+            $fullpath = $rel_path;
+            $file_temp = file_get_contents($img_path);
+            $file_temp = file_save_data($file_temp, $fullpath);
+          }
+          
+          // If we saved the file... let's do some more stuff.
+          if ($file_temp) {
+            global $user;
+            global $base_url;
+            // Change src attribute to new "relative" path.
+            $img->attr('src', $base_url.'/'.$rel_path);
+
+            // Add file to files table
+            $file = $rel_path;        
+            // Get the file size
+            $details = stat($file);
+            $filesize = $details['size'];
+        
+            // Build the file object
+            $file_obj = new stdClass();
+            $file_obj->filename = $filename;
+            $file_obj->filepath = $file;
+            $file_obj->filemime =  file_get_mimetype($filename);
+            $file_obj->filesize = $filesize;
+            $file_obj->filesource = $filename;
+            // You can change this to the UID you want
+            $file_obj->uid = $user->uid;
+            $file_obj->status = FILE_STATUS_PERMANENT;
+            $file_obj->timestamp = time();
+            $file_obj->list = 1;
+            $file_obj->new = true;
+        
+            // Save file to files table
+            drupal_write_record('files', $file_obj);
+            
+            // Update link info
+            wmod_add_link($img_path, $wm['wmid'], 'img');
+            $img_data = array(
+              'scanned' => array(
+                'holder' => '%d',
+                'val' => 1,
+              ),
+              'imported' => array(
+                'holder' => '%d',
+                'val' => 1,
+              ),
+              'imported_info' => array(
+                'holder' => '"%s"',
+                'val' => serialize(array('fid' => $file_obj->fid)),
+              ),
+            );
+            wmod_update_link($img_path, $wm['wmid'], $img_data);
+          }
         }
       }
     }
+
+    // Search for images... then change the paths on the img-src attribs
+    foreach ($result->top()->find($xpath)->find('a') as $link) {
+      $link_path = trim($link->attr('href'));
+      $link_path = wmod_parse_url($link_path, $path, $wm['base_url']);
+      
+      // See if we have a full link...
+      if ($link_path) {
+        $nid = FALSE;
+        // Try and load link
+        $link_link = wmod_get_url($link_path, $wm['wmid']);
+        
+        // See if we've already imported it, then get the nid
+        if (isset($link_link['imported']) && $link_link['imported']) {
+          $nid = unserialize($link_link['imported_info']);
+          $nid = $nid['nid'];
+        }
+        else {
+          // let's point the link to the AB url to prevent dead links
+          $link->attr('href', $link_path);
+        }
+        
+        if (is_numeric($nid)) {
+          // Lets update the href to our existing node
+          $link->attr('href', url('node/'.$nid, array('absolute' => TRUE)));
+        }
+      }
+    }
+
+    // save new HTML to results array
     if ($field == 'title') {
-      $results[$path][$field] = $result->top()->find($xpath)->text();
+      $results[$path][$field]['content'] = $result->top()->find($xpath)->text();
+      $results[$path][$field]['field'] = $wm['cont_type']['fields'][$field.'__xpath']['info'];
     }
     else {
-      $results[$path][$field] = $result->top()->find($xpath)->innerHTML();
+      $results[$path][$field]['content'] = $result->top()->find($xpath)->innerHTML();
+      $results[$path][$field]['field'] = $wm['cont_type']['fields'][$field.'__xpath']['info'];
     }
   }
   return $results;
 }
 
-function wmod_save_node($values, $type) {
+function wmod_save_node($values, $wm, $info) {
+  // These are the form elements we care about.
+  $settings = array(
+    //'menu', We don't want to adjust the menu values
+    //'path', Or path... we'll handle that manually
+    'options',
+    'revision_information',
+    'author',
+    'comment_settings',
+  );
+  
+  $values['path'] = $values['path']['path'];
+  // Fix values array
+  foreach ($values as $key => $val) {
+    if (in_array($key, $settings)) {
+      foreach ($val as $ikey => $ival) {
+        $values[$ikey] = $ival;
+      }
+      unset($values[$key]);
+    }
+  }
+  unset ($val);
   $form_state = array();
   module_load_include('inc', 'node', 'node.pages');  // new for Drupal 6
-  $node = array('type' => $type); // a variable holding the content type
+  $node = array('type' => $wm['cont_type']['type']); // a variable holding the content type
   $node = node_prepare((object)$node);
-  
-  $form_state['values']['type'] = $type;
+
+  $form_state['values']['type'] = $wm['cont_type']['type'];
   $form_state['values']['status'] = 1;
   $form_state['values']['op'] = t('Save');
   foreach ($values as $key => $val) {
-    if (strpos($key, 'field_') === 0) {
-      $form_state['values'][$key][0]['value'] = $val;
-    }
-    else {
-      $form_state['values'][$key] = $val;
-    }
+    $key = str_replace('__xpath', '', $key);
+    $form_state['values'][$key] = $val;
   }
   
   // call the function to create the node, node_revisions, and CCK values.
   // Replace "story" with the name of your form / content type
-  $errs = drupal_execute($type.'_node_form', $form_state, $node);
-  if (count($errs)) {
-    return FALSE;
+  $errs = drupal_execute($wm['cont_type']['type'].'_node_form', $form_state, $node);
+  $url_data = array();
+
+  // Since we most likely now have a new nid... let's update the link data
+  if ($form_state['nid']) {
+    $info['nid'] = $form_state['nid'];
+    $url_data['imported'] = array(
+      'holder' => '%d',
+      'val' => 1,
+    );
+    $url_data['imported_info'] = array(
+      'holder' => '"%s"',
+      'val' => serialize($info),
+    );
+    wmod_update_link($info['url'], $wm['wmid'], $url_data);
+
+    return TRUE;
   }
   else {
-    return TRUE;
+    return FALSE;
   }
 }
 
 function wmod_import_form(&$form_state, $wmid = NULL){
   $form = array();
   $wm = array_shift(wmod_load($wmid));
-  // Set blank menu item.
+  // Set blank menu item for saving a node
   $menu_item = array(
     'link_title' => '',
     'mlid' => 0,
@@ -337,27 +540,26 @@ function wmod_import_form(&$form_state, $wmid = NULL){
     'customized' => 0
   );
 
-  $base_url = $wm['base_url'];  
   ahah_helper_register($form, $form_state);
-
   // AHAH stuff
   if ($form_state['submitted'] && strpos($form_state['clicked_button']['#value'], 'Preview') === 0) {
     $clicked_button = str_replace('Preview ', '', $form_state['clicked_button']['#value']);
-    $clicked_path = $form_state['values']['urls'][$clicked_button]['settings']['path'];
+    $clicked_path = $form_state['values']['urls'][$clicked_button]['info']['wmod_original_path'];
     $fields = array();
-    foreach ($form_state['values']['urls'][$clicked_button]['settings'] as $key => $val) {
-      if (strpos($key, '__xpath')) {
-        $fields[str_replace('__xpath', '', $key)] = $val;
-      }
+    foreach ($form_state['values']['urls'][$clicked_button]['settings']['xpaths'] as $key => $val) {
+      $fields[str_replace('__xpath', '', $key)] = $val;
     }
-    $defaults = wmod_preview_page($wm, $clicked_path, $fields);
-    $urls = array($clicked_button => $base_url.'/'.$clicked_path);
+    $defaults = wmod_preview_page($wm, $clicked_button, $fields);
+    $urls = array($clicked_button => $wm['base_url'].'/'.$clicked_path);
   }
   else if ($form_state['submitted'] && strpos($form_state['clicked_button']['#value'], 'Save') === 0) {
     $clicked_button = str_replace('Save ', '', $form_state['clicked_button']['#value']);
-    $clicked_path = $form_state['values']['urls'][$clicked_button]['settings']['path'];
-    $saved = wmod_save_node($form_state['values']['urls'][$clicked_button]['settings'], $wm['cont_type']['type']);
-    $urls = array($clicked_button => $base_url.'/'.$clicked_path);
+    $clicked_path = $form_state['values']['urls'][$clicked_button]['info']['wmod_original_path'];
+    unset($form_state['values']['urls'][$clicked_button]['settings']['xpaths']);
+    $values = array_merge($form_state['values']['urls'][$clicked_button]['preview_area'], $form_state['values']['urls'][$clicked_button]['settings']);
+    $form_state['wmod_info']['url'] = $wm['base_url'].'/'.$clicked_path;
+    $saved = wmod_save_node($values, $wm, $form_state['wmod_info']);
+    $urls = array($clicked_button => $wm['base_url'].'/'.$clicked_path);
   }
   // non-AHAH stuff
   else {
@@ -375,11 +577,11 @@ function wmod_import_form(&$form_state, $wmid = NULL){
     '#tree' => TRUE,
   );
   foreach($urls as $i => $url) {
+    $path = str_replace($wm['base_url'].'/', '', $url);
     $form['urls']['pager'] = array(
       '#type' => 'item',
       '#value' => theme('pager'),
     );
-    $path = str_replace($base_url.'/', '', $url);
     $form['urls'][$i] = array(
       '#type' => 'fieldset',
       '#title' => $path ? $path : $url,
@@ -396,33 +598,71 @@ function wmod_import_form(&$form_state, $wmid = NULL){
       '#collapsible' => TRUE,
       '#collapsed' => TRUE,
     );
+    $form['urls'][$i]['settings']['xpaths'] = array(
+      '#weight' => -10,
+      '#type' => 'fieldset',
+      '#title' => 'XPath',
+      '#collapsible' => TRUE,
+      '#collapsed' => TRUE,
+    );
     foreach ($wm['cont_type']['fields'] as $key => $val) {
-      $form['urls'][$i]['settings'][$key] = array(
+      $form['urls'][$i]['settings']['xpaths'][$key] = array(
         '#type' => 'textfield',
         '#title' => $val['label'].' XPath',
         '#default_value' => $val['xpath'],
       );
     }
-    $form['urls'][$i]['settings']['menu'] = array(
-      '#type' => 'fieldset',
-      '#title' => 'Default Menu',
-      '#tree' => TRUE,
-    );
-    $form['urls'][$i]['settings']['menu']['parent'] = array(
-      '#type' => 'select',
-      '#options' => menu_parent_options(menu_get_menus(),$menu_item),
-      '#default_value' => $wm['cont_type']['menu'],
-    );
-    $form['urls'][$i]['settings']['menu']['link_title'] = array(
+    $form['urls'][$i]['settings'] += $wm['cont_type']['settings'];
+    $form['urls'][$i]['info']['wmod_original_path'] = array(
       '#type' => 'value',
-      '#value' => strip_tags(isset($defaults) ? $defaults[$clicked_path]['title'] : $path),
+      '#value' => $path,
     );
-    $form['urls'][$i]['settings']['path'] = array(
-      '#type' => 'textfield',
-      '#title' => 'Path',
-      '#description' => 'This path will be assigned to the new node!',
-      '#default_value' => $path,
+    $form['urls'][$i]['preview_area'] = array(
+      '#type' => 'item',
+      '#prefix' => '<div id="preview-'.$i.'">',
+      '#suffix' => '</div>',
     );
+
+    // Previewing the node.
+    if (isset($defaults) && $clicked_path == $path){
+      module_load_include('inc', 'content', 'includes/content.node_form');
+      $form['urls'][$i]['#collapsed'] = FALSE;
+      foreach ($defaults[$clicked_path] as $key => $val) {
+        if ($key != 'title') {
+          $form['#field_info'][$key] = $val['field'];
+          //$form_state['values'][$key] = $val['content'];
+          $elem = content_field_form($form, $form_state, $val['field']);
+          $form_state['values'][$key] = $form_state['values']['urls'][$i]['preview_area'][$key];
+          $form_state['values'][$key][0]['value'] = $val['content'];
+          $elem = content_field_form($form, $form_state, $val['field']);
+          $form['urls'][$i]['preview_area'][$key] = $elem[$key];
+        }
+        else {
+          $form['urls'][$i]['preview_area'][$key] = $val['field'];
+          $form['urls'][$i]['preview_area'][$key]['#default_value'] = $val['content'];
+        }
+      }
+
+      // We just save the node :)
+      if (isset($saved) && $saved){
+        $form['urls'][$i]['preview_area']['saved'] = array(
+          '#type' => 'item',
+          '#title' => 'Saved!',
+        );
+      }
+      else if (isset($saved) && !$saved){
+        $form['urls'][$i]['preview_area']['saved'] = array(
+          '#type' => 'item',
+          '#title' => 'Save error!',
+        );
+      }
+      
+      // Add meta info about the import
+      $form['wmod_info'] = array(
+        '#type' => 'value',
+        '#value' => $defaults['#info'],
+      );
+    }
     $form['urls'][$i]['preview'] = array(
       '#type' => 'submit',
       '#submit' => array('ahah_helper_generic_submit'),
@@ -443,45 +683,7 @@ function wmod_import_form(&$form_state, $wmid = NULL){
         'method' => 'replace',
       ),
     );
-    $form['urls'][$i]['preview_area'] = array(
-      '#type' => 'item',
-      '#prefix' => '<div id="preview-'.$i.'">',
-      '#suffix' => '</div>',
-    );
-
-    // Previewing the node.
-    if (isset($defaults) && $clicked_path == $path){
-      $form['urls'][$i]['#collapsed'] = FALSE;
-      foreach ($defaults[$clicked_path] as $key => $val) {
-        $form['urls'][$i]['preview_area'][$key] = array(
-          '#type' => 'item',
-          '#title' => $key,
-          '#value' => $defaults[$clicked_path][$key],
-        );
-        $form['urls'][$i]['settings'][$key] = array(
-          '#type' => 'value',
-          '#value' => $defaults[$clicked_path][$key],
-        );
-      }
-
-      // We just save the node :)
-      if (isset($saved) && $saved){
-        $form['urls'][$i]['preview_area']['saved'] = array(
-          '#type' => 'item',
-          '#title' => 'Saved!',
-        );
-      }
-      else if (isset($saved) && !$saved){
-        $form['urls'][$i]['preview_area']['saved'] = array(
-          '#type' => 'item',
-          '#title' => 'Save error!',
-        );
-      }
-    }
   }
-
-
-
   return $form;
 }
 
@@ -516,8 +718,16 @@ function wmod_form(&$form_state, $wmid = NULL){
     wmod_reset_paths($wm['wmid']);
     wmod_add_link($wm['base_url'], $wm['wmid'], 'html');
   }
+  // Our AHAH update stuff starts here.
+  if ($form_state['submitted'] && $form_state['clicked_button']['#value'] == t('Update')) {
+    wmod_update_pages($wm);
+  }
+  // Our AHAH update stuff starts here.
+  if ($form_state['submitted'] && $form_state['clicked_button']['#value'] == t('Reset Update Status')) {
+    wmod_reset_update_status($wm['wmid']);
+  }
+
   $results = wmod_get_results($wm['wmid']);
-  //dsm($results);
 
   // Build form
   $form['#cache'] = TRUE;
@@ -552,12 +762,6 @@ function wmod_form(&$form_state, $wmid = NULL){
     '#collapsible' => TRUE,
     '#collapsed' => FALSE,
   );
-  $form['xpath']['menu'] = array(
-    '#type' => 'select',
-    '#title' => 'Default Menu',
-    '#options' => menu_parent_options(menu_get_menus(),$menu_item),
-    '#default_value' => $wm['cont_type']['menu'],
-  );
   $form['xpath']['content_type'] = array(
     '#type' => 'select',
     '#title' => 'Content Type',
@@ -571,7 +775,7 @@ function wmod_form(&$form_state, $wmid = NULL){
       '#value' => t('Scan'),
       '#ahah' => array(
         'path' => 'wmod_js/scan_ahah',
-        'wrapper' => 'wmod-scan-results',
+        'wrapper' => 'wmod-results',
         'method' => 'replace',
         'progress' => array(
           'type' => 'bar',
@@ -587,7 +791,7 @@ function wmod_form(&$form_state, $wmid = NULL){
       '#value' => t('Reset Scan Data'),
       '#ahah' => array(
         'path' => ahah_helper_path(array('url', 'results')),
-        'wrapper' => 'wmod-scan-results',
+        'wrapper' => 'wmod-results',
         'method' => 'replace',
       ),
     );
@@ -603,7 +807,7 @@ function wmod_form(&$form_state, $wmid = NULL){
         '#type' => 'fieldset',
         '#title' => t('Results'),
         '#collapsible' => TRUE,
-        '#prefix' => '<div id="wmod-scan-results">',
+        '#prefix' => '<div id="wmod-results">',
         '#suffix' => '</div>',
       );
       foreach($results as $key => $val) {
@@ -613,8 +817,49 @@ function wmod_form(&$form_state, $wmid = NULL){
         );
       }
     }
+
+// ===================================
+
+    $form['url']['update'] = array(
+      '#type' => 'submit',
+      '#submit' => array('ahah_helper_generic_submit'),
+      '#value' => t('Update'),
+      '#ahah' => array(
+        'path' => 'wmod_js/update_ahah',
+        'wrapper' => 'wmod-results',
+        'method' => 'replace',
+        'progress' => array(
+          'type' => 'bar',
+          'message' => t('Updating...'),
+          'interval' => 1,
+          'url' => url('', array('absolute' => TRUE)).'wmod_js/update_interval/?wmid='.$wm['wmid'],
+        )
+      ),
+    );
+    $form['url']['reset_update'] = array(
+      '#type' => 'submit',
+      '#submit' => array('ahah_helper_generic_submit'),
+      '#value' => t('Reset Update Status'),
+      '#ahah' => array(
+        'path' => ahah_helper_path(array('url', 'results')),
+        'wrapper' => 'wmod-results',
+        'method' => 'replace',
+      ),
+    );
+
+
+// ===================================
+
+    $form['xpath']['settings'] = $wm['cont_type']['settings'];
+    $form['xpath']['settings']['xpath'] = array(
+      '#weight' => -10,
+      '#type' => 'fieldset',
+      '#title' => 'XPath',
+      '#collapsible' => TRUE,
+      '#collapsed' => TRUE,
+    );
     foreach ($wm['cont_type']['fields'] as $key => $val) {
-      $form['xpath'][$key] = array(
+      $form['xpath']['settings']['xpath'][$key] = array(
         '#type' => 'textfield',
         '#description' => "jQuery/CSS style selectors!",
         '#title' => $val['label'].' XPath',
@@ -631,6 +876,7 @@ function wmod_form(&$form_state, $wmid = NULL){
     '#type' => 'submit',
     '#value' => t('Save'),
   );
+
   return $form;
 }
 
@@ -640,22 +886,81 @@ function wmod_form_submit($form, &$form_state) {
     wmod_delete($form_state['values']['wmid']);
     return;
   }
-  
+  $type = $form_state['values']['content_type'];
   // Set info for content types.
-  $cont_type_info = array(
-    'type' => $form_state['values']['content_type'],
-    'menu' => $form_state['values']['menu'],
+
+  // Get a sample form for the content type
+  module_load_include('inc', 'node', 'node.pages');
+  $sample_node = new stdClass();
+  //$sample_fs = array();
+  $sample_node->type = $type;
+  $sample_form = node_form($form_state, $sample_node);
+  drupal_prepare_form($type.'_node_form', $sample_form, $form_state);
+
+  // These are the form elements we care about.
+  $settings = array(
+    'menu',
+    'path',
+    'options',
+    'revision_information',
+    'author',
+    'comment_settings',
+  );
+  // Add each of those settings to the content type info
+  foreach($sample_form as $key => $val) {
+    if (in_array($key, $settings)) {
+      $cont_type_info['settings'][$key] = $val;
+      if (isset($form_state['values']['menu'])) {
+        switch ($key) {
+          case 'menu':
+            $cont_type_info['settings'][$key]['mlid']['#default_value'] = $form_state['values']['menu']['mlid'];
+            $cont_type_info['settings'][$key]['module']['#default_value'] = $form_state['values']['menu']['module'];
+            $cont_type_info['settings'][$key]['hidden']['#default_value'] = $form_state['values']['menu']['hidden'];
+            $cont_type_info['settings'][$key]['has_children']['#default_value'] = $form_state['values']['menu']['has_children'];
+            $cont_type_info['settings'][$key]['customized']['#default_value'] = $form_state['values']['menu']['customized'];
+            $cont_type_info['settings'][$key]['options']['#default_value'] = $form_state['values']['menu']['options'];
+            $cont_type_info['settings'][$key]['parent_depth_limit']['#default_value'] = $form_state['values']['menu']['parent_depth_limit'];
+            $cont_type_info['settings'][$key]['link_title']['#default_value'] = $form_state['values']['menu']['link_title'];
+            $cont_type_info['settings'][$key]['parent']['#default_value'] = $form_state['values']['menu']['parent'];
+            $cont_type_info['settings'][$key]['weight']['#default_value'] = $form_state['values']['menu']['weight'];
+          break;
+          case 'path':
+            $cont_type_info['settings'][$key]['path']['#default_value'] = $form_state['values']['path'];
+          break;
+          case 'options':
+            $cont_type_info['settings'][$key]['status']['#default_value'] = $form_state['values']['status'];
+            $cont_type_info['settings'][$key]['promote']['#default_value'] = $form_state['values']['promote'];
+            $cont_type_info['settings'][$key]['sticky']['#default_value'] = $form_state['values']['sticky'];
+          break;
+          case 'revision_information':
+            $cont_type_info['settings'][$key]['revision']['#default_value'] = $form_state['values']['revision'];
+            $cont_type_info['settings'][$key]['log']['#default_value'] = $form_state['values']['log'];
+          break;
+          case 'author':
+            $cont_type_info['settings'][$key]['name']['#default_value'] = $form_state['values']['name'];
+          break;
+          case 'comment_settings':
+            $cont_type_info['settings'][$key]['comment']['#default_value'] = $form_state['values']['comment'];
+          break;
+        }
+      }
+    }
+  }
+  $cont_type_info['type'] = $type;
+
+  // Define "title"... it's a special field :)
+  $cont_type_info['fields']['title__xpath']['info'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Title'),
   );
   $cont_type_info['fields']['title__xpath']['label'] = 'Title';
   $cont_type_info['fields']['title__xpath']['xpath'] = isset($form_state['values']['title__xpath']) ? $form_state['values']['title__xpath'] : '';
-  $cont_fields = content_fields();
-  foreach (array_filter($cont_fields) as $key => $field) {
-    $each = content_fields($key, $cont_type_info['type']);
-    if ($each['type_name'] == $cont_type_info['type']) {
-      $cont_type_info['fields'][$key.'__xpath']['info'] = $each;
-      $cont_type_info['fields'][$key.'__xpath']['label'] = $each['widget']['label'];
-      $cont_type_info['fields'][$key.'__xpath']['xpath'] = isset($form_state['values'][$key.'__xpath']) ? $form_state['values'][$key.'__xpath'] : '';
-    }
+
+  $cck_info = _content_type_info();
+  foreach ($cck_info['content types'][$cont_type_info['type']]['fields'] as $key => $field) {
+    $cont_type_info['fields'][$key.'__xpath']['info'] = $field;
+    $cont_type_info['fields'][$key.'__xpath']['label'] = $field['widget']['label'];
+    $cont_type_info['fields'][$key.'__xpath']['xpath'] = isset($form_state['values'][$key.'__xpath']) ? $form_state['values'][$key.'__xpath'] : '';
   }
 
   // Set array for defaults.
@@ -729,7 +1034,7 @@ function wmod_scan_ahah() {
 function wmod_scan_interval() {
   $wmid = isset($_GET['wmid']) ? $_GET['wmid'] : FALSE;
   // Get percentage.
-  $per = wmod_get_interval_percent();
+  $per = wmod_get_scan_int_per();
 
   // If we can get result data... get it!
   if ($wmid) {
@@ -742,13 +1047,49 @@ function wmod_scan_interval() {
   }
 }
 
-function wmod_get_interval_percent() {
+function wmod_update_ahah() {
+  // Standard AHAH stuff.
+  $form_state = array('storage' => NULL, 'submitted' => FALSE);
+  $form_build_id = $_POST['form_build_id'];
+  $form = form_get_cache($form_build_id, $form_state);
+  $args = $form['#parameters'];
+  $form_id = array_shift($args);
+  $form_state['post'] = $form['#post'] = $_POST;
+  $form['#programmed'] = $form['#redirect'] = FALSE;
+  drupal_process_form($form_id, $form, $form_state);
+  $form = drupal_rebuild_form($form_id, $form_state, $args, $form_build_id);
+
+  // Get the part of the form we're returning.
+  $results_fieldset = $form['url']['results'];
+  unset($results_fieldset['#prefix'], $results_fieldset['#suffix']);
+  $output = theme('status_messages') . drupal_render($results_fieldset);
+  drupal_json(array('status' => TRUE, 'data' => $output));
+}
+
+function wmod_update_interval() {
+  $wmid = isset($_GET['wmid']) ? $_GET['wmid'] : FALSE;
+  // Get percentage.
+  $per = wmod_get_up_int_per();
+
+  // If we can get result data... get it!
+  if ($wmid) {
+    $results = wmod_get_results($wmid);
+    $msg = "Updating ".$results['updated']." of ".$results['not_updated'];
+    drupal_json(array('percentage' => $per, 'message' => $msg));
+  }
+  else {
+    drupal_json(array('percentage' => $per));
+  }
+}
+
+function wmod_get_scan_int_per() {
   return variable_get('wmod_scan_int', 0);
 }
 
-function wmod_set_interval_percent($wmid) {
-  $scanned = wmod_get_scanned_count($wmid);
-  $not_scanned = wmod_get_notscanned_count($wmid);
+function wmod_set_scan_int_per($wmid) {
+  $total = wmod_get_count($wmid, 'type', '"%s"', 'html');
+  $scanned = wmod_get_count($wmid, 'scanned', '%d', 1);
+  $not_scanned = $total - $scanned;
   if ($not_scanned) {
     $per = (int)(($scanned / $not_scanned) * 100);
   }
@@ -759,76 +1100,79 @@ function wmod_set_interval_percent($wmid) {
   variable_set('wmod_scan_int', $per);
 }
 
+function wmod_get_up_int_per() {
+  return variable_get('wmod_up_int', 0);
+}
+
+function wmod_set_up_int_per($wmid) {
+  $results = wmod_get_results($wmid);
+
+  if ($results['not_updated']) {
+    $per = (int)(($results['updated'] / $results['not_updated']) * 100);
+  }
+  else {
+    $per = 100;
+  }
+  
+  variable_set('wmod_up_int', $per);
+}
+
 function wmod_get_results ($wmid) {
-  $scanned = wmod_get_scanned_count($wmid);
-  $not_scanned = wmod_get_notscanned_count($wmid);
-  $error = wmod_get_error_count($wmid);
-  $html = wmod_get_html_count($wmid);
-  $doc = wmod_get_doc_count($wmid);
-  $img = wmod_get_img_count($wmid);
+  $results = array();
+  $results['total'] = wmod_get_count($wmid, 'total');
+  $results['imported'] = wmod_get_count($wmid, 'imported', '%d', 1);
+  $results['not_imported'] = $results['total'] - $results['imported'];
+  $results['scanned'] = wmod_get_count($wmid, 'scanned', '%d', 1);
+  $results['not_scanned'] = $results['total'] - $results['scanned'];
+  $results['error'] = wmod_get_count($wmid, 'error', '%d', 1);
+  $results['html'] = wmod_get_count($wmid, 'type', '"%s"', 'html');
+  $results['doc'] = wmod_get_count($wmid, 'type', '"%s"', 'doc');
+  $results['img'] = wmod_get_count($wmid, 'type', '"%s"', 'img');
 
-  return array(
-    'scanned' => $scanned,
-    'not_scanned' => $not_scanned,
-    'error' => $error,
-    'html' => $html,
-    'doc' => $doc,
-    'img' => $img,
+  $fields = array();
+  $fields['type'] = array(
+    'holder' => '"%s"',
+    'val' => 'html',
   );
+  $fields['imported'] = array(
+    'holder' => '%d',
+    'val' => 1,
+  );
+  $results['updatable'] = wmod_get_count($wmid, $fields);
+  $results['updated'] = wmod_get_count($wmid, 'updated', '%d', 1);
+  $results['not_updated'] = $results['updatable'] - $results['updated'];
+
+  return $results;
 }
 
-function wmod_get_error_count($wmid){
+function wmod_get_count($wmid, $field, $holder = '', $field_val = ''){
+  $field_arr = array();
+  $field_args = array();
+
+  // Set wmid first...
+  $field_args[] = $wmid;
+
+  // then set everything else
+  if (is_array($field)) {
+    foreach ($field as $key => $val) {
+      $field_arr[] = 'AND w.'.$key.'='.$val['holder'].' ';
+      $field_args[] = $val['val'];
+    }
+  }
+  else if ($field != 'total') {
+    $field_arr[] = 'AND w.'.$field.'='.$holder.' ';
+    $field_args[] = $field_val;
+  }
+
+  
   $sql = '';
   $sql .= 'SELECT COUNT(*) ';
   $sql .= 'FROM {wmod_urls} w ';
-  $sql .= 'WHERE w.error=1 ';  
-  $sql .= 'AND w.wmid=%d ';  
-  return db_result(db_query($sql, $wmid));
-}
-
-function wmod_get_img_count($wmid){
-  $sql = '';
-  $sql .= 'SELECT COUNT(*) ';
-  $sql .= 'FROM {wmod_urls} w ';
-  $sql .= 'WHERE w.type="img" ';  
-  $sql .= 'AND w.wmid=%d ';  
-  return db_result(db_query($sql, $wmid));
-}
-
-function wmod_get_doc_count($wmid){
-  $sql = '';
-  $sql .= 'SELECT COUNT(*) ';
-  $sql .= 'FROM {wmod_urls} w ';
-  $sql .= 'WHERE w.type="doc" ';  
-  $sql .= 'AND w.wmid=%d ';  
-  return db_result(db_query($sql, $wmid));
-}
-
-function wmod_get_html_count($wmid){
-  $sql = '';
-  $sql .= 'SELECT COUNT(*) ';
-  $sql .= 'FROM {wmod_urls} w ';
-  $sql .= 'WHERE w.type="html" ';  
-  $sql .= 'AND w.wmid=%d ';  
-  return db_result(db_query($sql, $wmid));
-}
-
-function wmod_get_scanned_count($wmid){
-  $sql = '';
-  $sql .= 'SELECT COUNT(*) ';
-  $sql .= 'FROM {wmod_urls} w ';
-  $sql .= 'WHERE w.scanned=1 ';  
-  $sql .= 'AND w.wmid=%d ';  
-  return db_result(db_query($sql, $wmid));
-}
-
-function wmod_get_notscanned_count($wmid) {
-  $sql = '';
-  $sql .= 'SELECT COUNT(*) ';
-  $sql .= 'FROM {wmod_urls} w ';
-  $sql .= 'WHERE w.scanned=0 ';  
-  $sql .= 'AND w.wmid=%d ';  
-  return db_result(db_query($sql, $wmid));
+  $sql .= 'WHERE w.wmid=%d ';
+  if ($field != 'total') {
+    $sql .= implode('', $field_arr);  
+  }
+  return db_result(db_query($sql, $field_args));
 }
 
 function wmod_access_edit_page($wmid = NULL){
@@ -840,34 +1184,39 @@ function wmod_access_edit_page($wmid = NULL){
   }
 }
 
-function wmod_update_link($path, $error = FALSE){
-  $url = wmod_get_url($path);
-  if (!empty($url)) {
-    $error = $error ? 1 : 0;
-
-    $sql = '';
-    $sql .= 'UPDATE {wmod_urls} ';
-    $sql .= 'SET scanned = 1, error = %d ';
-    $sql .= 'WHERE path="%s"';
-    db_query($sql, $error, $path);  
+function wmod_update_link($url, $wmid, $data){
+  $field_arr = array();
+  $field_args = array();
+  foreach ($data as $key => $val) {
+    $field_arr[] = $key.'='.$val['holder'].' ';
+    $field_args[] = $val['val'];
   }
+  $field_args[] = $url;
+  $field_args[] = $wmid;
+
+  $sql = '';
+  $sql .= 'UPDATE {wmod_urls} ';
+  $sql .= 'SET '.implode(', ',$field_arr).' ';
+  $sql .= 'WHERE path="%s" ';
+  $sql .= 'AND wmid=%d ';
+  db_query($sql, $field_args);  
 }
 
 function wmod_add_links($urls, $wmid) {
   foreach ($urls as $url) {
-    $record = wmod_get_url($url['path']);
+    $record = wmod_get_url($url['url'], $wmid);
     if (empty($record)) {
-      wmod_add_link($url['path'], $wmid, $url['type']);
+      wmod_add_link($url['url'], $wmid, $url['type']);
     }
   }
 }
 
-function wmod_add_link ($path, $wmid, $type) {
+function wmod_add_link ($url, $wmid, $type) {
   $sql = '';
   $sql .= 'INSERT INTO {wmod_urls} ';
   $sql .= '(wmid, path, type) ';
   $sql .= 'VALUES (%d, "%s", "%s") ';
-  db_query($sql, $wmid, $path, $type);
+  db_query($sql, $wmid, $url, $type);
 }
 
 function wmod_get_html_urls($wmid) {
@@ -884,12 +1233,7 @@ function wmod_get_html_urls($wmid) {
   $results = pager_query($sql, 20, 0, NULL, $wmid);
   
   while ($result = db_fetch_array($results)) {
-    if ($wm['base_url'] != $result['path']){
-      $urls[$result['wmurl_id']] = $wm['base_url'].'/'.$result['path'];
-    }
-    else {
-      $urls[$result['wmurl_id']] = $wm['base_url'];
-    }
+      $urls[$result['wmurl_id']] = $result['path'];
   }
 
   return $urls;
@@ -918,7 +1262,7 @@ function wmod_get_all_paths($wmid, $limit = NULL) {
   return $urls;
 }
 
-function wmod_get_avail_paths($wmid, $limit = NULL) {
+function wmod_get_avail_urls($wmid, $limit = NULL) {
   $urls = array();
 
   $sql = '';
@@ -943,13 +1287,45 @@ function wmod_get_avail_paths($wmid, $limit = NULL) {
   return $urls;
 }
 
-function wmod_get_url($path) {
+function wmod_get_updatable_urls($wmid, $limit = NULL) {
+  $urls = array();
+
+  $sql = '';
+  $sql .= 'SELECT w.path ';
+  $sql .= 'FROM {wmod_urls} w ';
+  $sql .= 'WHERE w.wmid = %d ';
+  $sql .= 'AND w.imported = 1 ';
+  $sql .= 'AND w.type = "html" ';
+  if ($limit) {
+    $sql .= 'LIMIT 0,%d ';
+    $results = db_query($sql, $wmid, $limit);
+  }
+  else {
+    $results = db_query($sql, $wmid);    
+  }
+  
+  while ($result = db_fetch_array($results)) {
+    $urls[] = $result['path'];
+  }
+
+  return $urls;
+}
+
+function wmod_get_url($lookup, $wmid = NULL) {
   $sql = '';
   $sql .= 'SELECT * ';
   $sql .= 'FROM {wmod_urls} w ';
-  $sql .= 'WHERE w.path = "%s" ';
+  if (is_numeric($lookup)) {
+    $sql .= 'WHERE w.wmurl_id = %d ';
+  }
+  else {
+    $sql .= 'WHERE w.path = "%s" ';
+  }
+  if ($wmid) {
+    $sql .= 'AND w.wmid = %d ';
+  }
   $sql .= 'LIMIT 0,1 ';
-  $result = db_fetch_array(db_query($sql, $path));
+  $result = db_fetch_array(db_query($sql, array($lookup, $wmid)));
   return $result;
 }
 
@@ -984,6 +1360,14 @@ function wmod_load($wmid = NULL){
   }
   
   return $wmods;
+}
+
+function wmod_reset_url_status($wmid) {
+  $sql = '';
+  $sql .= 'UPDATE {wmod_urls} ';
+  $sql .= 'SET updated=0 ';
+  $sql .= 'WHERE wmid=%d ';
+  db_query($sql, $wmid);
 }
 
 function wmod_reset_paths($wmid) {

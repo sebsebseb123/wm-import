@@ -71,6 +71,18 @@ function wmod_schema() {
         'not null' => TRUE,
         'default' => 0,
       ),
+      'updated' => array(
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'ignore' => array(
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
       'imported' => array(
         'type' => 'int',
         'unsigned' => TRUE,
@@ -78,6 +90,11 @@ function wmod_schema() {
         'default' => 0,
       ),
       'imported_info' => array(
+        'type' => 'text',
+        'size' => 'big',
+        'not null' => TRUE,
+      ),
+      'html' => array(
         'type' => 'text',
         'size' => 'big',
         'not null' => TRUE,
